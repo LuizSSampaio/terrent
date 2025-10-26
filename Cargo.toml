@@ -10,3 +10,4 @@ bendy = { version = "0.6.0", features = ["serde"] }
 anyhow = "1.0.100"
 ratatui = "0.29.0"
 crossterm = "0.29.0"
+tui-widgets = "0.4.1"

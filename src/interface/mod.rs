@@ -5,12 +5,9 @@ use ratatui::{
     Frame,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Widget},
+    widgets::Paragraph,
 };
-
-mod components;
-
-use components::popup::{PopUp, WidgetItem};
+use tui_widgets::popup::Popup;
 
 #[derive(Debug, Default, Clone)]
 struct Model {
@@ -55,24 +52,9 @@ fn view(model: &mut Model, frame: &mut Frame) {
     frame.render_widget(Paragraph::new(main_text), frame.area());
 
     if model.show_exit_message {
-        let message_lines = vec![
-            Line::from(Span::styled(
-                "Press Ctrl+C again to quit,",
-                Style::default().fg(Color::Yellow),
-            )),
-            Line::from(Span::styled(
-                "or any other key to continue.",
-                Style::default().fg(Color::Gray),
-            )),
-        ];
-
-        let widgets = vec![WidgetItem::new(2, 30, move |area, buf| {
-            let paragraph = Paragraph::new(message_lines.clone());
-            paragraph.render(area, buf);
-        })];
-
-        let popup = PopUp::new(Some("Confirm Exit".to_string()), widgets);
-        popup.render(frame);
+        let popup = Popup::new("Press Ctrl+C again to quit, or any other key to continue.")
+            .title(Line::from("Confirm Exit").centered());
+        frame.render_widget(&popup, frame.area());
     }
 }
 
