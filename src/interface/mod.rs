@@ -1,7 +1,16 @@
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use ratatui::{Frame, widgets::Paragraph};
+use ratatui::{
+    Frame,
+    style::{Color, Style},
+    text::{Line, Span},
+    widgets::{Paragraph, Widget},
+};
+
+mod components;
+
+use components::popup::{PopUp, WidgetItem};
 
 #[derive(Debug, Default, Clone)]
 struct Model {
@@ -29,7 +38,7 @@ pub fn init() {
     let mut model = Model::default();
 
     while model.running_state != RunningState::Done {
-        terminal.draw(|f| view(&mut model, f));
+        let _ = terminal.draw(|f| view(&mut model, f)).unwrap();
 
         let mut message = handle_event(&model);
 
@@ -42,16 +51,32 @@ pub fn init() {
 }
 
 fn view(model: &mut Model, frame: &mut Frame) {
-    let text = if model.show_exit_message {
-        "Terrent\n\nPress Ctrl+C again to quit, or any other key to continue."
-    } else {
-        "Terrent"
-    };
-    frame.render_widget(Paragraph::new(text), frame.area());
+    let main_text = "Terrent";
+    frame.render_widget(Paragraph::new(main_text), frame.area());
+
+    if model.show_exit_message {
+        let message_lines = vec![
+            Line::from(Span::styled(
+                "Press Ctrl+C again to quit,",
+                Style::default().fg(Color::Yellow),
+            )),
+            Line::from(Span::styled(
+                "or any other key to continue.",
+                Style::default().fg(Color::Gray),
+            )),
+        ];
+
+        let widgets = vec![WidgetItem::new(2, 30, move |area, buf| {
+            let paragraph = Paragraph::new(message_lines.clone());
+            paragraph.render(area, buf);
+        })];
+
+        let popup = PopUp::new(Some("Confirm Exit".to_string()), widgets);
+        popup.render(frame);
+    }
 }
 
 fn handle_event(model: &Model) -> Option<Message> {
-    // Check if we should clear the exit message due to timeout
     if model.show_exit_message {
         if let Some(last_ctrl_c) = model.last_ctrl_c {
             if last_ctrl_c.elapsed() > Duration::from_secs(3) {
@@ -75,16 +100,13 @@ fn handle_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
         KeyCode::Char('q') => Some(Message::Quit),
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             if let Some(last_ctrl_c) = model.last_ctrl_c {
-                // If Ctrl+C was pressed within the last 2 seconds, quit
                 if last_ctrl_c.elapsed() < Duration::from_secs(2) {
                     return Some(Message::Quit);
                 }
             }
-            // First Ctrl+C or too much time passed, show warning
             Some(Message::CtrlC)
-        },
+        }
         _ => {
-            // Any other key clears the exit message
             if model.show_exit_message {
                 Some(Message::ClearExitMessage)
             } else {
@@ -100,11 +122,11 @@ fn update(model: &mut Model, msg: Message) -> Option<Message> {
         Message::CtrlC => {
             model.last_ctrl_c = Some(Instant::now());
             model.show_exit_message = true;
-        },
+        }
         Message::ClearExitMessage => {
             model.show_exit_message = false;
             model.last_ctrl_c = None;
-        },
+        }
     }
     None
 }
