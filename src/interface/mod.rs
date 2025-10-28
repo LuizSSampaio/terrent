@@ -1,14 +1,28 @@
-use std::time::{Duration, Instant};
+pub mod components;
 
+use std::time::Duration;
+
+use components::confirmation_popup::ConfirmationMessage;
+use components::{ConfirmationPopup, ConfirmationResult};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use ratatui::{Frame, text::Line, widgets::Paragraph};
-use tui_widgets::popup::Popup;
+use ratatui::{Frame, widgets::Paragraph};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 struct Model {
     running_state: RunningState,
-    last_ctrl_c: Option<Instant>,
-    show_exit_message: bool,
+    exit_confirmation: ConfirmationPopup,
+}
+
+impl Default for Model {
+    fn default() -> Self {
+        Self {
+            running_state: RunningState::default(),
+            exit_confirmation: ConfirmationPopup::new(
+                "Confirm Exit",
+                "Are you sure you want to quit?",
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -21,8 +35,8 @@ enum RunningState {
 #[derive(PartialEq, Eq)]
 enum Message {
     Quit,
-    CtrlC,
-    ClearExitPopup,
+    ShowExitConfirmation,
+    ExitConfirmation(ConfirmationMessage),
 }
 
 pub fn init() {
@@ -32,7 +46,7 @@ pub fn init() {
     while model.running_state != RunningState::Done {
         let _ = terminal.draw(|f| view(&mut model, f)).unwrap();
 
-        let mut message = handle_event(&model);
+        let mut message = handle_event(&mut model);
 
         while message.is_some() {
             message = update(&mut model, message.unwrap());
@@ -46,21 +60,10 @@ fn view(model: &mut Model, frame: &mut Frame) {
     let main_text = "Terrent";
     frame.render_widget(Paragraph::new(main_text), frame.area());
 
-    if model.show_exit_message {
-        let popup = Popup::new("Press Ctrl+C again to quit, or any other key to continue.")
-            .title(Line::from("Confirm Exit").centered());
-        frame.render_widget(&popup, frame.area());
-    }
+    model.exit_confirmation.render(frame, frame.area());
 }
 
-fn handle_event(model: &Model) -> Option<Message> {
-    if model.show_exit_message
-        && let Some(last_ctrl_c) = model.last_ctrl_c
-        && last_ctrl_c.elapsed() > Duration::from_secs(3)
-    {
-        return Some(Message::ClearExitPopup);
-    }
-
+fn handle_event(model: &mut Model) -> Option<Message> {
     if event::poll(Duration::from_millis(250)).unwrap()
         && let Event::Key(key) = event::read().unwrap()
         && key.kind == event::KeyEventKind::Press
@@ -70,37 +73,38 @@ fn handle_event(model: &Model) -> Option<Message> {
     None
 }
 
-fn handle_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
+fn handle_key(key: event::KeyEvent, model: &mut Model) -> Option<Message> {
+    if model.exit_confirmation.is_visible() {
+        if let Some(msg) = model.exit_confirmation.handle_key(key) {
+            return Some(Message::ExitConfirmation(msg));
+        }
+        return None;
+    }
+
     match key.code {
         KeyCode::Char('q') => Some(Message::Quit),
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if let Some(last_ctrl_c) = model.last_ctrl_c
-                && last_ctrl_c.elapsed() < Duration::from_secs(2)
-            {
-                return Some(Message::Quit);
-            }
-            Some(Message::CtrlC)
+            Some(Message::ShowExitConfirmation)
         }
-        _ => {
-            if model.show_exit_message {
-                Some(Message::ClearExitPopup)
-            } else {
-                None
-            }
-        }
+        _ => None,
     }
 }
 
 fn update(model: &mut Model, msg: Message) -> Option<Message> {
     match msg {
         Message::Quit => model.running_state = RunningState::Done,
-        Message::CtrlC => {
-            model.last_ctrl_c = Some(Instant::now());
-            model.show_exit_message = true;
+        Message::ShowExitConfirmation => {
+            model.exit_confirmation.show();
         }
-        Message::ClearExitPopup => {
-            model.show_exit_message = false;
-            model.last_ctrl_c = None;
+        Message::ExitConfirmation(confirmation_msg) => {
+            if let Some(result) = model.exit_confirmation.update(confirmation_msg) {
+                match result {
+                    ConfirmationResult::Yes => model.running_state = RunningState::Done,
+                    ConfirmationResult::No | ConfirmationResult::Cancelled => {
+                        model.exit_confirmation.hide();
+                    }
+                }
+            }
         }
     }
     None
